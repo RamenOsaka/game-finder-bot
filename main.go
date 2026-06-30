@@ -9,8 +9,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
+	"github.com/nicklaw5/helix/v2"
 )
 
+var twitchClient *helix.Client
 var configFilePath = "config.json"
 var defaultPerms int64 = discordgo.PermissionAdministrator
 var serverConfigs = map[string]ServerConfig{}
@@ -19,8 +21,26 @@ var serverConfigs = map[string]ServerConfig{}
 var guildID string = "1260943648695255140"
 
 func main() {
-	// Setting up discord token
-	discordToken, appID := loadEnv()
+	// Loading env variables
+	discordToken, discordAppID, twitchClientID, twitchClientSecret := loadEnv()
+
+	// Setting up twitch application
+	var err error
+	twitchClient, err = helix.NewClient(&helix.Options{
+		ClientID:     twitchClientID,
+		ClientSecret: twitchClientSecret,
+	})
+	if err != nil {
+		log.Fatal("Couldn't create client session :", err)
+	}
+
+	resp, err := twitchClient.RequestAppAccessToken([]string{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	twitchClient.SetAppAccessToken(resp.Data.AccessToken)
+
+	// Creating new discord session
 	dg, err := discordgo.New("Bot " + discordToken)
 	if err != nil {
 		log.Println("Error creating Discord session: ", err)
@@ -41,7 +61,7 @@ func main() {
 	}
 
 	// Creating commands
-	loadCommands(dg, appID, guildID)
+	loadCommands(dg, discordAppID, guildID)
 
 	log.Println("Game Finder is now running.  Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
@@ -73,7 +93,10 @@ func loadCommands(s *discordgo.Session, appID string, guildID string) {
 	for _, cmd := range commands {
 		applicationCommandList = append(applicationCommandList, cmd.Definition)
 	}
-	s.ApplicationCommandBulkOverwrite(appID, guildID, applicationCommandList)
+	_, err = s.ApplicationCommandBulkOverwrite(appID, guildID, applicationCommandList)
+	if err != nil {
+		log.Println("Couldn't register commands: ", err)
+	}
 }
 
 func loadConfig() {
@@ -92,23 +115,36 @@ func loadConfig() {
 	serverConfigs = data
 }
 
-func loadEnv() (string, string) {
+func loadEnv() (string, string, string, string) {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
-	token, exists := os.LookupEnv("DISCORD_TOKEN")
+	discordToken, exists := os.LookupEnv("DISCORD_TOKEN")
 	if !exists {
 		log.Println("DISCORD_TOKEN is not set!")
-	} else if token == "" {
+	} else if discordToken == "" {
 		log.Println("DISCORD_TOKEN is empty!")
 	}
-	appID, exists := os.LookupEnv("APP_ID")
+	discordAppID, exists := os.LookupEnv("DISCORD_APP_ID")
 	if !exists {
-		log.Println("APP_ID is not set!")
-	} else if token == "" {
-		log.Println("APP_ID is empty!")
+		log.Println("DISCORD_APP_ID is not set!")
+	} else if discordAppID == "" {
+		log.Println("DISCORD_APP_ID is empty!")
 	}
-	return token, appID
+
+	twitchClientID, exists := os.LookupEnv("TWITCH_CLIENT_ID")
+	if !exists {
+		log.Println("TWITCH_CLIENT_ID is not set!")
+	} else if twitchClientID == "" {
+		log.Println("TWITCH_CLIENT_ID is empty!")
+	}
+	twitchClientSecret, exists := os.LookupEnv("TWITCH_CLIENT_SECRET")
+	if !exists {
+		log.Println("TWITCH_CLIENT_SECRET is not set!")
+	} else if twitchClientSecret == "" {
+		log.Println("TWITCH_CLIENT_SECRET is empty!")
+	}
+	return discordToken, discordAppID, twitchClientID, twitchClientSecret
 }

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"time"
+
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -18,4 +21,16 @@ func handlerInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			cmd.Handler(s, i)
 		}
 	}
+}
+
+func startTwitchPolling(ctx context.Context) {
+	ticker := time.NewTicker(time.Second * 60)
+
+	go func() {
+		defer ticker.Stop()
+
+		for {
+			
+		}
+	}()
 }

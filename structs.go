@@ -4,6 +4,7 @@ import "github.com/bwmarrin/discordgo"
 
 type ServerConfig struct {
 	DisplayChannel string
+	TwitchGameID string
 }
 
 type Command struct {
