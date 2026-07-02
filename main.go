@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"time"
+	"context"
 	"os/signal"
 	"syscall"
 
@@ -12,13 +14,6 @@ import (
 	"github.com/nicklaw5/helix/v2"
 )
 
-var twitchClient *helix.Client
-var configFilePath = "config.json"
-var defaultPerms int64 = discordgo.PermissionAdministrator
-var serverConfigs = map[string]ServerConfig{}
-
-// test server for devs
-var guildID string = "1260943648695255140"
 
 func main() {
 	// Loading env variables
@@ -26,6 +21,7 @@ func main() {
 
 	// Setting up twitch application
 	var err error
+
 	twitchClient, err = helix.NewClient(&helix.Options{
 		ClientID:     twitchClientID,
 		ClientSecret: twitchClientSecret,
@@ -71,13 +67,21 @@ func main() {
 	dg.Close()
 }
 
-func saveConfig() {
-	config, err := json.Marshal(serverConfigs)
-	if err != nil {
-		log.Println("Could not transform serverConfigs into json data: ", err)
+func pollTwitch(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case<-ctx.Done():
+			log.Println("Polling stopped:", ctx.Err())
+			return
+		case <-ticker.C:
+			log.Println("Polling...")
+		}
 	}
-	os.WriteFile(configFilePath, config, 0644)
 }
+
 
 func loadCommands(s *discordgo.Session, appID string, guildID string) {
 	_, err := s.ApplicationCommandBulkOverwrite(appID, "", []*discordgo.ApplicationCommand{})
@@ -99,20 +103,36 @@ func loadCommands(s *discordgo.Session, appID string, guildID string) {
 	}
 }
 
+func saveConfig() {
+	var permData = map[string]GuildConfig{}
+	for key, value := range guildRuntime {
+		permData[key] = value.guildConfig
+	}
+	config, err := json.Marshal(permData)
+	if err != nil {
+		log.Println("Could not transform guildRuntime into json data: ", err)
+	}
+	os.WriteFile(configFilePath, config, 0644)
+}
+
 func loadConfig() {
-	var data map[string]ServerConfig
+	var data map[string]GuildConfig
 	config, err := os.ReadFile(configFilePath)
 	if err != nil {
-		log.Println(configFilePath+" Hasn't been created yet : ", err)
-		serverConfigs = map[string]ServerConfig{}
+		log.Println(configFilePath + " Hasn't been created yet : ", err)
+		guildRuntime = map[string]*GuildRuntime{}
 		return
 	} else if len(config) == 0 {
-		serverConfigs = map[string]ServerConfig{}
+		guildRuntime = map[string]*GuildRuntime{}
 		return
 	}
-
 	json.Unmarshal(config, &data)
-	serverConfigs = data
+
+	for key, value := range data {
+		guildRuntime[key] = &GuildRuntime{
+			guildConfig: value,
+		}
+	}
 }
 
 func loadEnv() (string, string, string, string) {

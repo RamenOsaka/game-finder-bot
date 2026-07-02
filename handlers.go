@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -12,8 +10,8 @@ func ready(s *discordgo.Session, event *discordgo.Ready) {
 }
 
 func handlerInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if _, exists := serverConfigs[i.GuildID]; !exists {
-		serverConfigs[i.GuildID] = ServerConfig{}
+	if _, exists := guildRuntime[i.GuildID]; !exists {
+		guildRuntime[i.GuildID] = &GuildRuntime{}
 	}
 
 	if i.Type == discordgo.InteractionApplicationCommand {
@@ -21,16 +19,4 @@ func handlerInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			cmd.Handler(s, i)
 		}
 	}
-}
-
-func startTwitchPolling(ctx context.Context) {
-	ticker := time.NewTicker(time.Second * 60)
-
-	go func() {
-		defer ticker.Stop()
-
-		for {
-			
-		}
-	}()
 }

@@ -40,17 +40,107 @@ var commands = map[string]Command{
 		},
 		Handler: handleSetGame,
 	},
+	"startpolling": {
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "startpolling",
+			Description:              "starts polling twitch for streamed games",
+			DefaultMemberPermissions: &defaultPerms,
+		},
+		Handler: handleStartTwitchPolling,
+	},
+	"stoppolling": {
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "stoppolling",
+			Description:              "stopts polling twitch for streamed games",
+			DefaultMemberPermissions: &defaultPerms,
+		},
+		Handler: handleStopTwitchPolling,
+	},
+}
+
+func handleStartTwitchPolling(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// get game name
+	game, err := twitchClient.GetGames(&helix.GamesParams{
+		IDs: []string{guildRuntime[i.GuildID].guildConfig.TwitchGameID},
+	})
+	if err != nil {
+		log.Println(err)
+	}
+	
+	if len(game.Data.Games) == 0 {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: 4,
+			Data: &discordgo.InteractionResponseData{
+				Content: "The game hasn't been set up yet.",
+			},
+		})
+		return
+	}
+
+	if !guildRuntime[i.GuildID].twitchPolling.tryStart() {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: 4,
+			Data: &discordgo.InteractionResponseData{
+				Content: "The game **" + game.Data.Games[0].Name + "** is already being displayed",
+			},
+		})
+		return
+	}
+
+	go pollTwitch(guildRuntime[i.GuildID].twitchPolling.ctx)
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: 4,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Starting to display live streams of **"+ game.Data.Games[0].Name + "**",
+		},
+	})
+}
+
+func handleStopTwitchPolling(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// get game name
+	game, err := twitchClient.GetGames(&helix.GamesParams{
+		IDs: []string{guildRuntime[i.GuildID].guildConfig.TwitchGameID},
+	})
+	if err != nil {
+		log.Println(err)
+	}
+	
+	if len(game.Data.Games) == 0 {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: 4,
+			Data: &discordgo.InteractionResponseData{
+				Content: "The game hasn't been set up yet.",
+			},
+		})
+	}
+
+	if !guildRuntime[i.GuildID].twitchPolling.tryStop() {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: 4,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Nothing is being polled at the moment.",
+			},
+		})
+		return
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: 4,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Stopping to display live streams of **"+ game.Data.Games[0].Name + "**",
+		},
+	})
 }
 
 func handleSetGame(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	games, err := twitchClient.GetGames(&helix.GamesParams{
+	game, err := twitchClient.GetGames(&helix.GamesParams{
 		Names: []string{i.ApplicationCommandData().Options[0].StringValue()},
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
-	if len(games.Data.Games) == 0 {
+	if len(game.Data.Games) == 0 {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{
@@ -58,14 +148,14 @@ func handleSetGame(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		},
 	})
 	} else {
-		config := serverConfigs[i.GuildID]
-		config.TwitchGameID = games.Data.Games[0].ID
-		serverConfigs[i.GuildID] = config
+		config := guildRuntime[i.GuildID].guildConfig
+		config.TwitchGameID = game.Data.Games[0].ID
+		guildRuntime[i.GuildID].guildConfig = config
 
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: 4,
 			Data: &discordgo.InteractionResponseData{
-				Content: "Game **" + games.Data.Games[0].Name + "** has been set.",
+				Content: "Game **" + game.Data.Games[0].Name + "** has been set.",
 			},
 		})
 	}
@@ -73,9 +163,9 @@ func handleSetGame(s *discordgo.Session, i *discordgo.InteractionCreate) {
 }
 
 func handleSetLogChannel(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	config := serverConfigs[i.GuildID]
+	config := guildRuntime[i.GuildID].guildConfig
 	config.DisplayChannel = i.ApplicationCommandData().Options[0].ChannelValue(s).ID
-	serverConfigs[i.GuildID] = config
+	guildRuntime[i.GuildID].guildConfig = config
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{
