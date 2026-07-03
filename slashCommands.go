@@ -87,7 +87,7 @@ func handleStartTwitchPolling(s *discordgo.Session, i *discordgo.InteractionCrea
 		return
 	}
 
-	go pollTwitch(guildRuntime[i.GuildID].twitchPolling.ctx)
+	go pollTwitch(guildRuntime[i.GuildID].twitchPolling.ctx, s, i.GuildID)
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{

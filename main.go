@@ -18,6 +18,7 @@ import (
 func main() {
 	// Loading env variables
 	discordToken, discordAppID, twitchClientID, twitchClientSecret := loadEnv()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	// Setting up twitch application
 	var err error
@@ -29,17 +30,12 @@ func main() {
 	if err != nil {
 		log.Fatal("Couldn't create client session :", err)
 	}
-
-	resp, err := twitchClient.RequestAppAccessToken([]string{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	twitchClient.SetAppAccessToken(resp.Data.AccessToken)
+	go maintainAppAccessToken(ctx)
 
 	// Creating new discord session
 	dg, err := discordgo.New("Bot " + discordToken)
 	if err != nil {
-		log.Println("Error creating Discord session: ", err)
+		log.Fatal("Error creating Discord session: ", err)
 		return
 	}
 
@@ -57,27 +53,99 @@ func main() {
 	}
 
 	// Creating commands
-	loadCommands(dg, discordAppID, guildID)
+	loadCommands(dg, discordAppID, testGuildID)
 
 	log.Println("Game Finder is now running.  Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 
+	cancel()
 	dg.Close()
 }
 
-func pollTwitch(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
+func fetchStreams(s *discordgo.Session, guildID string) {
+	resp, err := twitchClient.GetStreams(&helix.StreamsParams{
+		GameIDs: []string{guildRuntime[guildID].guildConfig.TwitchGameID},
+	})
+	if err != nil {
+		log.Println("Couldn't fetch streams:", err)
+		guildLog := messageCantGetStreams(err)
+		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.DisplayChannel, &guildLog)
+	}
+
+	var streamMap = map[string]helix.Stream{}
+	for _, stream := range resp.Data.Streams {
+		streamMap[stream.UserID] = stream
+	}
+
+	for streamerID, messageID := range guildRuntime[guildID].activeStreams {
+		if _, exists := streamMap[streamerID]; !exists {
+			s.ChannelMessageDelete(guildRuntime[guildID].guildConfig.DisplayChannel, messageID)
+			config := guildRuntime[guildID]
+			delete(config.activeStreams, streamerID)
+			guildRuntime[guildID] = config
+		}
+	}
+
+	for streamerID, stream := range streamMap {
+		if _, exists := guildRuntime[guildID].activeStreams[streamerID]; !exists {
+			sendMessage := messageDisplayStream(stream)
+			message, err := s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.DisplayChannel, &sendMessage)
+			if err != nil {
+				log.Println("Could not send stream message: ", err)
+			}
+			config := guildRuntime[guildID]
+			config.activeStreams[streamerID] = message.ID
+			guildRuntime[guildID] = config
+		}
+	}
+}
+
+func pollTwitch(ctx context.Context, s *discordgo.Session, guildID string) {
+	guildRuntime[guildID].activeStreams = map[string]string{}
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case<-ctx.Done():
 			log.Println("Polling stopped:", ctx.Err())
+			for _, messageID := range guildRuntime[guildID].activeStreams {
+					s.ChannelMessageDelete(guildRuntime[guildID].guildConfig.DisplayChannel, messageID)
+			}
 			return
 		case <-ticker.C:
+			fetchStreams(s, guildID)
 			log.Println("Polling...")
+		}
+	}
+}
+
+func refreshAccessToken() (time.Duration, error) {
+	resp, err := twitchClient.RequestAppAccessToken([]string{})
+	if err != nil {
+
+		return 0, err
+	}
+	twitchClient.SetAppAccessToken(resp.Data.AccessToken)
+	return time.Duration(resp.Data.ExpiresIn) * time.Second, nil
+}
+
+func maintainAppAccessToken(ctx context.Context) {
+	for {
+		expiresIn, err := refreshAccessToken()
+		if err != nil {
+			log.Println("Couldn't get/refresh the Twitch App Access Token: ", err)
+			return
+		}
+
+		refreshIn := expiresIn - time.Hour
+
+		select {
+		case<-ctx.Done():
+			return
+		case<-time.After(refreshIn):
 		}
 	}
 }
@@ -143,28 +211,28 @@ func loadEnv() (string, string, string, string) {
 
 	discordToken, exists := os.LookupEnv("DISCORD_TOKEN")
 	if !exists {
-		log.Println("DISCORD_TOKEN is not set!")
+		log.Fatal("DISCORD_TOKEN is not set!")
 	} else if discordToken == "" {
-		log.Println("DISCORD_TOKEN is empty!")
+		log.Fatal("DISCORD_TOKEN is empty!")
 	}
 	discordAppID, exists := os.LookupEnv("DISCORD_APP_ID")
 	if !exists {
-		log.Println("DISCORD_APP_ID is not set!")
+		log.Fatal("DISCORD_APP_ID is not set!")
 	} else if discordAppID == "" {
-		log.Println("DISCORD_APP_ID is empty!")
+		log.Fatal("DISCORD_APP_ID is empty!")
 	}
 
 	twitchClientID, exists := os.LookupEnv("TWITCH_CLIENT_ID")
 	if !exists {
-		log.Println("TWITCH_CLIENT_ID is not set!")
+		log.Fatal("TWITCH_CLIENT_ID is not set!")
 	} else if twitchClientID == "" {
-		log.Println("TWITCH_CLIENT_ID is empty!")
+		log.Fatal("TWITCH_CLIENT_ID is empty!")
 	}
 	twitchClientSecret, exists := os.LookupEnv("TWITCH_CLIENT_SECRET")
 	if !exists {
-		log.Println("TWITCH_CLIENT_SECRET is not set!")
+		log.Fatal("TWITCH_CLIENT_SECRET is not set!")
 	} else if twitchClientSecret == "" {
-		log.Println("TWITCH_CLIENT_SECRET is empty!")
+		log.Fatal("TWITCH_CLIENT_SECRET is empty!")
 	}
 	return discordToken, discordAppID, twitchClientID, twitchClientSecret
 }

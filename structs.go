@@ -12,6 +12,8 @@ type GuildConfig struct {
 }
 
 type GuildRuntime struct {
+	// map of streamer ID to message ID
+	activeStreams map[string]string
 	twitchPolling TwitchPolling
 	guildConfig GuildConfig
 }
