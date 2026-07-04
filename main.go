@@ -70,8 +70,8 @@ func fetchStreams(s *discordgo.Session, guildID string) {
 	})
 	if err != nil {
 		log.Println("Couldn't fetch streams:", err)
-		guildLog := messageCantGetStreams(err)
-		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.DisplayChannel, &guildLog)
+		message := messageError(err)
+		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
 	}
 
 	var streamMap = map[string]helix.Stream{}
@@ -81,7 +81,12 @@ func fetchStreams(s *discordgo.Session, guildID string) {
 
 	for streamerID, messageID := range guildRuntime[guildID].activeStreams {
 		if _, exists := streamMap[streamerID]; !exists {
-			s.ChannelMessageDelete(guildRuntime[guildID].guildConfig.DisplayChannel, messageID)
+			err := s.ChannelMessageDelete(guildRuntime[guildID].guildConfig.DisplayChannel, messageID)
+			if err != nil {
+				log.Println("Couldn't delete messages:", err)
+				message := messageError(err)
+				s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+			}
 			config := guildRuntime[guildID]
 			delete(config.activeStreams, streamerID)
 			guildRuntime[guildID] = config
@@ -94,6 +99,8 @@ func fetchStreams(s *discordgo.Session, guildID string) {
 			message, err := s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.DisplayChannel, &sendMessage)
 			if err != nil {
 				log.Println("Could not send stream message: ", err)
+				message := messageError(err)
+				s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
 			}
 			config := guildRuntime[guildID]
 			config.activeStreams[streamerID] = message.ID
@@ -112,7 +119,12 @@ func pollTwitch(ctx context.Context, s *discordgo.Session, guildID string) {
 		case<-ctx.Done():
 			log.Println("Polling stopped:", ctx.Err())
 			for _, messageID := range guildRuntime[guildID].activeStreams {
-					s.ChannelMessageDelete(guildRuntime[guildID].guildConfig.DisplayChannel, messageID)
+				err := s.ChannelMessageDelete(guildRuntime[guildID].guildConfig.DisplayChannel, messageID)
+				if err != nil {
+					log.Println("Couldn't delete messages:", err)
+					message := messageError(err)
+					s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+				}
 			}
 			return
 		case <-ticker.C:
@@ -125,7 +137,6 @@ func pollTwitch(ctx context.Context, s *discordgo.Session, guildID string) {
 func refreshAccessToken() (time.Duration, error) {
 	resp, err := twitchClient.RequestAppAccessToken([]string{})
 	if err != nil {
-
 		return 0, err
 	}
 	twitchClient.SetAppAccessToken(resp.Data.AccessToken)
@@ -155,10 +166,14 @@ func loadCommands(s *discordgo.Session, appID string, guildID string) {
 	_, err := s.ApplicationCommandBulkOverwrite(appID, "", []*discordgo.ApplicationCommand{})
 	if err != nil {
 		log.Println("Could not delete the global commands: ", err)
+		message := messageError(err)
+		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
 	}
 	_, err = s.ApplicationCommandBulkOverwrite(appID, guildID, []*discordgo.ApplicationCommand{})
 	if err != nil {
-		log.Println("Could not delete the server commands commands: ", err)
+		message := messageError(err)
+		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+		log.Println("Could not delete the guild commands: ", err)
 	}
 
 	var applicationCommandList []*discordgo.ApplicationCommand
@@ -167,6 +182,8 @@ func loadCommands(s *discordgo.Session, appID string, guildID string) {
 	}
 	_, err = s.ApplicationCommandBulkOverwrite(appID, guildID, applicationCommandList)
 	if err != nil {
+		message := messageError(err)
+		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
 		log.Println("Couldn't register commands: ", err)
 	}
 }
@@ -178,7 +195,7 @@ func saveConfig() {
 	}
 	config, err := json.Marshal(permData)
 	if err != nil {
-		log.Println("Could not transform guildRuntime into json data: ", err)
+		log.Println("Could not save guild data: ", err)
 	}
 	os.WriteFile(configFilePath, config, 0644)
 }

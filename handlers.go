@@ -16,7 +16,11 @@ func handlerInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	if i.Type == discordgo.InteractionApplicationCommand {
 		if cmd, exists := commands[i.ApplicationCommandData().Name]; exists {
-			cmd.Handler(s, i)
+			err := cmd.Handler(s, i)
+			if err != nil {
+				response := messageCommandError(err)
+				s.InteractionRespond(i.Interaction, &response)
+			}
 		}
 	}
 }

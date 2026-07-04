@@ -27,11 +27,11 @@ func messageDisplayStream(stream helix.Stream) discordgo.MessageSend {
 	}
 }
 
-func messageCantGetStreams(err error) discordgo.MessageSend { 
+func messageError(err error) discordgo.MessageSend { 
 	return discordgo.MessageSend{
 		Embeds: []*discordgo.MessageEmbed{
 			{
-				Title: "⚠️ Could not fetch streams!",
+				Title: "⚠️ An **error** occured!",
 				Color: 0xb5af3a,
 				Footer: &discordgo.MessageEmbedFooter{
 					Text: time.Now().Format("2006-01-02 15:04:05"),
@@ -48,23 +48,11 @@ func messageCantGetStreams(err error) discordgo.MessageSend {
 	}
 }
 
-func messageCantRefreshAccessToken(err error) discordgo.MessageSend { 
-	return discordgo.MessageSend{
-		Embeds: []*discordgo.MessageEmbed{
-			{
-				Title: "⚠️ Could not refresh access token!",
-				Color: 0xb5af3a,
-				Footer: &discordgo.MessageEmbedFooter{
-					Text: time.Now().Format("2006-01-02 15:04:05"),
-				},
-				Fields: []*discordgo.MessageEmbedField{
-					{
-						Name:   "Error",
-						Value:  err.Error(),
-						Inline: false,
-					},
-				},
-			},
+func messageCommandError(err error) discordgo.InteractionResponse {
+	return discordgo.InteractionResponse{
+		Type: 4,
+		Data: &discordgo.InteractionResponseData{
+			Content: "⚠️ **Error** : " + err.Error(),
 		},
 	}
 }

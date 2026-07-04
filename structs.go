@@ -9,6 +9,7 @@ import (
 type GuildConfig struct {
 	DisplayChannel string
 	TwitchGameID string
+	LogChannel string
 }
 
 type GuildRuntime struct {
@@ -20,7 +21,7 @@ type GuildRuntime struct {
 
 type Command struct {
 	Definition *discordgo.ApplicationCommand
-	Handler func(s *discordgo.Session, i *discordgo.InteractionCreate)
+	Handler func(s *discordgo.Session, i *discordgo.InteractionCreate) error
 }
 
 type TwitchPolling struct {
