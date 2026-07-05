@@ -81,7 +81,7 @@ func fetchStreams(s *discordgo.Session, guildID string) error {
 	}
 
 	for streamerID, messageID := range guildRuntime[guildID].activeStreams {
-		if _, exists := streamMap[streamerID]; slices.Contains(guildRuntime[guildID].Config().StreamerIDBlacklist, streamerID) || !exists {
+		if stream, exists := streamMap[streamerID]; slices.Contains(guildRuntime[guildID].Config().StreamerIDBlacklist, streamerID) || !exists || (guildRuntime[guildID].Config().EnableMinViewers && (stream.ViewerCount < int(guildRuntime[guildID].Config().MinViewers))) {
 			if !guildRuntime[guildID].Config().EnableHistory {
 				err = s.ChannelMessageDelete(guildRuntime[guildID].Config().DisplayChannel, messageID)
 				if err != nil {

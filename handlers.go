@@ -6,7 +6,7 @@ import (
 )
 
 func ready(s *discordgo.Session, event *discordgo.Ready) {
-	s.UpdateGameStatus(0, "👁️ looking out for bots")
+	s.UpdateGameStatus(0, "Looking out for cool game streams")
 }
 
 func handlerInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {

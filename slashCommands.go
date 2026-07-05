@@ -221,9 +221,9 @@ func handleSetGame(s *discordgo.Session, i *discordgo.InteractionCreate) error {
 	if len(game.Data.Games) == 0 {
 		return errors.New("This game cannot be found")
 	} else {
-		config := guildRuntime[i.GuildID].guildConfig
-		config.TwitchGameID = game.Data.Games[0].ID
-		guildRuntime[i.GuildID].guildConfig = config
+		guildRuntime[i.GuildID].SetConfig(func(gc *GuildConfig) {
+			gc.TwitchGameID = game.Data.Games[0].ID
+		})
 
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: 4,
@@ -237,9 +237,9 @@ func handleSetGame(s *discordgo.Session, i *discordgo.InteractionCreate) error {
 }
 
 func handleSetStreamChannel(s *discordgo.Session, i *discordgo.InteractionCreate) error {
-	config := guildRuntime[i.GuildID].guildConfig
-	config.DisplayChannel = i.ApplicationCommandData().Options[0].ChannelValue(s).ID
-	guildRuntime[i.GuildID].guildConfig = config
+	guildRuntime[i.GuildID].SetConfig(func(gc *GuildConfig) {
+		gc.DisplayChannel = i.ApplicationCommandData().Options[0].ChannelValue(s).ID
+	})
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{
@@ -251,9 +251,9 @@ func handleSetStreamChannel(s *discordgo.Session, i *discordgo.InteractionCreate
 }
 
 func handleSetLogChannel(s *discordgo.Session, i *discordgo.InteractionCreate) error {
-	config := guildRuntime[i.GuildID].guildConfig
-	config.LogChannel = i.ApplicationCommandData().Options[0].ChannelValue(s).ID
-	guildRuntime[i.GuildID].guildConfig = config
+	guildRuntime[i.GuildID].SetConfig(func(gc *GuildConfig) {
+		gc.LogChannel = i.ApplicationCommandData().Options[0].ChannelValue(s).ID
+	})
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{
@@ -265,9 +265,9 @@ func handleSetLogChannel(s *discordgo.Session, i *discordgo.InteractionCreate) e
 }
 
 func handleEnableHistory(s *discordgo.Session, i *discordgo.InteractionCreate) error {
-	config := guildRuntime[i.GuildID].guildConfig
-	config.EnableHistory = i.ApplicationCommandData().Options[0].BoolValue()
-	guildRuntime[i.GuildID].guildConfig = config
+	guildRuntime[i.GuildID].SetConfig(func(gc *GuildConfig) {
+		gc.EnableHistory = i.ApplicationCommandData().Options[0].BoolValue()
+	})
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{
@@ -288,10 +288,9 @@ func handleAddStreamerBlacklist(s *discordgo.Session, i *discordgo.InteractionCr
 	if len(resp.Data.Users) == 0 {
 		return errors.New("This user cannot be found")
 	}
-
-	config := guildRuntime[i.GuildID].guildConfig
-	config.StreamerIDBlacklist = append(config.StreamerIDBlacklist, resp.Data.Users[0].ID)
-	guildRuntime[i.GuildID].guildConfig = config
+	guildRuntime[i.GuildID].SetConfig(func(gc *GuildConfig) {
+		gc.StreamerIDBlacklist = append(gc.StreamerIDBlacklist, resp.Data.Users[0].ID)
+	})
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{
@@ -313,14 +312,15 @@ func handleRemoveStreamerBlacklist(s *discordgo.Session, i *discordgo.Interactio
 		return errors.New("This user cannot be found")
 	}
 
-	config := guildRuntime[i.GuildID].guildConfig
+	config := guildRuntime[i.GuildID].Config()
 	streamerIndex := slices.Index(config.StreamerIDBlacklist, resp.Data.Users[0].ID)
 	if streamerIndex == -1 {
 		return errors.New("This user is not part of the blacklist")
 	}
 
-	config.StreamerIDBlacklist = slices.Delete(config.StreamerIDBlacklist, streamerIndex, streamerIndex + 1)
-	guildRuntime[i.GuildID].guildConfig = config
+	guildRuntime[i.GuildID].SetConfig(func(gc *GuildConfig) {
+		gc.StreamerIDBlacklist = slices.Delete(gc.StreamerIDBlacklist, streamerIndex, streamerIndex + 1)
+	})
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{
@@ -332,9 +332,9 @@ func handleRemoveStreamerBlacklist(s *discordgo.Session, i *discordgo.Interactio
 }
 
 func handleEnableViewerFloor(s *discordgo.Session, i *discordgo.InteractionCreate) error {
-	config := guildRuntime[i.GuildID].guildConfig
-	config.EnableMinViewers = i.ApplicationCommandData().Options[0].BoolValue()
-	guildRuntime[i.GuildID].guildConfig = config
+	guildRuntime[i.GuildID].SetConfig(func(gc *GuildConfig) {
+		gc.EnableMinViewers = i.ApplicationCommandData().Options[0].BoolValue()
+	})
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{
@@ -346,9 +346,9 @@ func handleEnableViewerFloor(s *discordgo.Session, i *discordgo.InteractionCreat
 }
 
 func handleSetViewerFloor(s *discordgo.Session, i *discordgo.InteractionCreate) error {
-	config := guildRuntime[i.GuildID].guildConfig
-	config.MinViewers = i.ApplicationCommandData().Options[0].IntValue()
-	guildRuntime[i.GuildID].guildConfig = config
+	guildRuntime[i.GuildID].SetConfig(func(gc *GuildConfig) {
+		gc.MinViewers = i.ApplicationCommandData().Options[0].IntValue()
+	})
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{

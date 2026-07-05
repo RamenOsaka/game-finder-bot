@@ -4,6 +4,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/nicklaw5/helix/v2"
 	"time"
+    "log"
 	"fmt"
 	"strings"
 )
@@ -15,10 +16,20 @@ func messageDisplayStream(stream helix.Stream) discordgo.MessageSend {
         "{width}", "1280",
         "{height}", "720",
     ).Replace(stream.ThumbnailURL)
-
     thumbnailURL += fmt.Sprintf("?t=%d", time.Now().Unix())
 
+    user, err := twitchClient.GetUsers(&helix.UsersParams{
+		IDs: []string{stream.UserID},
+	})
+	if err != nil {
+		log.Println("Could not fetch twitch API")
+	}
+    streamerURL := user.Data.Users[0].ProfileImageURL
+
     embed := &discordgo.MessageEmbed{
+        Thumbnail: &discordgo.MessageEmbedThumbnail{
+            URL: streamerURL,
+        },
         Author: &discordgo.MessageEmbedAuthor{
             Name: stream.UserName,
             URL:  streamURL,
