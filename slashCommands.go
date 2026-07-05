@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"errors"
+	"slices"
+	"strconv"
 	"github.com/bwmarrin/discordgo"
 	"github.com/nicklaw5/helix/v2"
 )
@@ -60,6 +62,91 @@ var commands = map[string]Command{
 		},
 		Handler: handleSetGame,
 	},
+	"addblacklist": {
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "addblacklist",
+			Description:              "add a user to the streams blacklist",
+			DefaultMemberPermissions: &defaultPerms,
+			Contexts: &[]discordgo.InteractionContextType{discordgo.InteractionContextGuild},
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "user",
+					Description: "the user's login name, can be found in the url at USER : https://www.twitch.tv/<USER>",
+					Required:    true,
+				},
+			},
+		},
+		Handler: handleAddStreamerBlacklist,
+	},
+	"removeblacklist": {
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "removeblacklist",
+			Description:              "removes a user from the streams blacklist",
+			DefaultMemberPermissions: &defaultPerms,
+			Contexts: &[]discordgo.InteractionContextType{discordgo.InteractionContextGuild},
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "user",
+					Description: "the user's login name, can be found in the url at USER : https://www.twitch.tv/<USER>",
+					Required:    true,
+				},
+			},
+		},
+		Handler: handleAddStreamerBlacklist,
+	},
+	"enablehistory": {
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "enablehistory",
+			Description:              "enable or disable the twitch streams history in the stream channel",
+			DefaultMemberPermissions: &defaultPerms,
+			Contexts: &[]discordgo.InteractionContextType{discordgo.InteractionContextGuild},
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionBoolean,
+					Name:        "boolean",
+					Description: "whether or not you want the history to be enabled",
+					Required:    true,
+				},
+			},
+		},
+		Handler: handleEnableHistory,
+	},
+	"enableviewerfloor": {
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "enableviewerfloor",
+			Description:              "enable or disable whether or not streams are filtered by amount of followers",
+			DefaultMemberPermissions: &defaultPerms,
+			Contexts: &[]discordgo.InteractionContextType{discordgo.InteractionContextGuild},
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionBoolean,
+					Name:        "boolean",
+					Description: "whether or not viewer floor is be enabled",
+					Required:    true,
+				},
+			},
+		},
+		Handler: handleEnableViewerFloor,
+	},
+	"setminviewers": {
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "setminviewers",
+			Description:              "set the minimum amount of viewers for the streamer's stream to be displayed",
+			DefaultMemberPermissions: &defaultPerms,
+			Contexts: &[]discordgo.InteractionContextType{discordgo.InteractionContextGuild},
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionInteger,
+					Name:        "amount",
+					Description: "amount of viewers (default to 0)",
+					Required:    true,
+				},
+			},
+		},
+		Handler: handleSetViewerFloor,
+	},
 	"startpolling": {
 		Definition: &discordgo.ApplicationCommand{
 			Name:                     "startpolling",
@@ -83,7 +170,7 @@ var commands = map[string]Command{
 func handleStartTwitchPolling(s *discordgo.Session, i *discordgo.InteractionCreate) error {
 	// get game name
 	game, err := twitchClient.GetGames(&helix.GamesParams{
-		IDs: []string{guildRuntime[i.GuildID].guildConfig.TwitchGameID},
+		IDs: []string{guildRuntime[i.GuildID].Config().TwitchGameID},
 	})
 	if err != nil {
 		log.Println(err)
@@ -171,6 +258,101 @@ func handleSetLogChannel(s *discordgo.Session, i *discordgo.InteractionCreate) e
 		Type: 4,
 		Data: &discordgo.InteractionResponseData{
 			Content: "Channel **" + i.ApplicationCommandData().Options[0].ChannelValue(s).Name + "** has been set as the log channel.",
+		},
+	})
+	saveConfig()
+	return nil
+}
+
+func handleEnableHistory(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	config := guildRuntime[i.GuildID].guildConfig
+	config.EnableHistory = i.ApplicationCommandData().Options[0].BoolValue()
+	guildRuntime[i.GuildID].guildConfig = config
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: 4,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Stream history is now set to **" + strconv.FormatBool(i.ApplicationCommandData().Options[0].BoolValue()) + "**.",
+		},
+	})
+	saveConfig()
+	return nil
+}
+
+func handleAddStreamerBlacklist(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	resp, err := twitchClient.GetUsers(&helix.UsersParams{
+		Logins: []string{i.ApplicationCommandData().Options[0].StringValue()},
+	})
+	if err != nil {
+		return errors.New("Could not fetch twitch API")
+	}
+	if len(resp.Data.Users) == 0 {
+		return errors.New("This user cannot be found")
+	}
+
+	config := guildRuntime[i.GuildID].guildConfig
+	config.StreamerIDBlacklist = append(config.StreamerIDBlacklist, resp.Data.Users[0].ID)
+	guildRuntime[i.GuildID].guildConfig = config
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: 4,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Streamer **" + resp.Data.Users[0].DisplayName + "** has been added to the blacklist.",
+		},
+	})
+	saveConfig()
+	return nil
+}
+
+func handleRemoveStreamerBlacklist(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	resp, err := twitchClient.GetUsers(&helix.UsersParams{
+		Logins: []string{i.ApplicationCommandData().Options[0].StringValue()},
+	})
+	if err != nil {
+		return errors.New("Could not fetch twitch API")
+	}
+	if len(resp.Data.Users) == 0 {
+		return errors.New("This user cannot be found")
+	}
+
+	config := guildRuntime[i.GuildID].guildConfig
+	streamerIndex := slices.Index(config.StreamerIDBlacklist, resp.Data.Users[0].ID)
+	if streamerIndex == -1 {
+		return errors.New("This user is not part of the blacklist")
+	}
+
+	config.StreamerIDBlacklist = slices.Delete(config.StreamerIDBlacklist, streamerIndex, streamerIndex + 1)
+	guildRuntime[i.GuildID].guildConfig = config
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: 4,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Streamer **" + resp.Data.Users[0].DisplayName + "** has been removed from the blacklist.",
+		},
+	})
+	saveConfig()
+	return nil
+}
+
+func handleEnableViewerFloor(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	config := guildRuntime[i.GuildID].guildConfig
+	config.EnableMinViewers = i.ApplicationCommandData().Options[0].BoolValue()
+	guildRuntime[i.GuildID].guildConfig = config
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: 4,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Filtering by followers floor is now set to **" + strconv.FormatBool(i.ApplicationCommandData().Options[0].BoolValue()) + "**.",
+		},
+	})
+	saveConfig()
+	return nil
+}
+
+func handleSetViewerFloor(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	config := guildRuntime[i.GuildID].guildConfig
+	config.MinViewers = i.ApplicationCommandData().Options[0].IntValue()
+	guildRuntime[i.GuildID].guildConfig = config
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: 4,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Followers floor is now set to **" + strconv.FormatInt(i.ApplicationCommandData().Options[0].IntValue(), 10) + "**.",
 		},
 	})
 	saveConfig()

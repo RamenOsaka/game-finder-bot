@@ -4,27 +4,53 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/nicklaw5/helix/v2"
 	"time"
+	"fmt"
+	"strings"
 )
 
-func messageDisplayStream(stream helix.Stream) discordgo.MessageSend { 
-	return discordgo.MessageSend{
-		Embeds: []*discordgo.MessageEmbed{
-			{
-				Title: "**" + stream.UserName + "** is streaming " + stream.GameName + "!",
-				Color: 0xb57a3a,
-				Footer: &discordgo.MessageEmbedFooter{
-					Text: time.Now().Format("2006-01-02 15:04:05"),
-				},
-				// Fields: []*discordgo.MessageEmbedField{
-				// 	{
-				// 		Name:   "Error",
-				// 		Value:  "",
-				// 		Inline: false,
-				// 	},
-				//},
-			},
-		},
-	}
+func messageDisplayStream(stream helix.Stream) discordgo.MessageSend {
+    streamURL := fmt.Sprintf("https://twitch.tv/%s", stream.UserLogin)
+
+    thumbnailURL := strings.NewReplacer(
+        "{width}", "1280",
+        "{height}", "720",
+    ).Replace(stream.ThumbnailURL)
+
+    thumbnailURL += fmt.Sprintf("?t=%d", time.Now().Unix())
+
+    embed := &discordgo.MessageEmbed{
+        Author: &discordgo.MessageEmbedAuthor{
+            Name: stream.UserName,
+            URL:  streamURL,
+        },
+        Title:       stream.Title,
+        URL:         streamURL,
+        Description: fmt.Sprintf("🎮 Playing **%s**", stream.GameName),
+        Color:       0x9146FF,
+        Image: &discordgo.MessageEmbedImage{
+            URL: thumbnailURL,
+        },
+        Fields: []*discordgo.MessageEmbedField{
+            {
+                Name:   "Viewers",
+                Value:  fmt.Sprintf("%d", stream.ViewerCount),
+                Inline: true,
+            },
+            {
+                Name:   "Started streaming",
+                Value:  fmt.Sprintf("<t:%d:R>", stream.StartedAt.Unix()),
+                Inline: true,
+            },
+        },
+        Footer: &discordgo.MessageEmbedFooter{
+            Text: "Twitch",
+        },
+        Timestamp: time.Now().Format(time.RFC3339),
+    }
+
+    return discordgo.MessageSend{
+        Embeds: []*discordgo.MessageEmbed{embed},
+    }
 }
 
 func messageError(err error) discordgo.MessageSend { 

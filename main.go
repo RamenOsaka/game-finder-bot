@@ -1,19 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
-	"time"
-	"context"
 	"os/signal"
+	"slices"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
 	"github.com/nicklaw5/helix/v2"
 )
-
 
 func main() {
 	// Loading env variables
@@ -28,14 +29,14 @@ func main() {
 		ClientSecret: twitchClientSecret,
 	})
 	if err != nil {
-		log.Fatal("Couldn't create client session :", err)
+		log.Fatal("Couldn't create client session:", err)
 	}
 	go maintainAppAccessToken(ctx)
 
 	// Creating new discord session
 	dg, err := discordgo.New("Bot " + discordToken)
 	if err != nil {
-		log.Fatal("Error creating Discord session: ", err)
+		log.Fatal("Error creating Discord session:", err)
 		return
 	}
 
@@ -49,7 +50,7 @@ func main() {
 	// Opening websocket
 	err = dg.Open()
 	if err != nil {
-		log.Println("Error opening Discord session: ", err)
+		log.Println("Error opening Discord session:", err)
 	}
 
 	// Creating commands
@@ -61,17 +62,17 @@ func main() {
 	<-sc
 
 	cancel()
+	saveConfig()
 	dg.Close()
 }
 
-func fetchStreams(s *discordgo.Session, guildID string) {
+func fetchStreams(s *discordgo.Session, guildID string) error {
 	resp, err := twitchClient.GetStreams(&helix.StreamsParams{
-		GameIDs: []string{guildRuntime[guildID].guildConfig.TwitchGameID},
+		GameIDs: []string{guildRuntime[guildID].Config().TwitchGameID},
 	})
 	if err != nil {
 		log.Println("Couldn't fetch streams:", err)
-		message := messageError(err)
-		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+		return fmt.Errorf("Could not fetch Twitch API: %w", err)
 	}
 
 	var streamMap = map[string]helix.Stream{}
@@ -80,12 +81,15 @@ func fetchStreams(s *discordgo.Session, guildID string) {
 	}
 
 	for streamerID, messageID := range guildRuntime[guildID].activeStreams {
-		if _, exists := streamMap[streamerID]; !exists {
-			err := s.ChannelMessageDelete(guildRuntime[guildID].guildConfig.DisplayChannel, messageID)
-			if err != nil {
-				log.Println("Couldn't delete messages:", err)
-				message := messageError(err)
-				s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+		if _, exists := streamMap[streamerID]; slices.Contains(guildRuntime[guildID].Config().StreamerIDBlacklist, streamerID) || !exists {
+			if !guildRuntime[guildID].Config().EnableHistory {
+				err = s.ChannelMessageDelete(guildRuntime[guildID].Config().DisplayChannel, messageID)
+				if err != nil {
+					log.Println("Couldn't delete messages:", err)
+					errMessage := messageError(err)
+					s.ChannelMessageSendComplex(guildRuntime[guildID].Config().LogChannel, &errMessage)
+					continue
+				}
 			}
 			config := guildRuntime[guildID]
 			delete(config.activeStreams, streamerID)
@@ -94,41 +98,53 @@ func fetchStreams(s *discordgo.Session, guildID string) {
 	}
 
 	for streamerID, stream := range streamMap {
-		if _, exists := guildRuntime[guildID].activeStreams[streamerID]; !exists {
-			sendMessage := messageDisplayStream(stream)
-			message, err := s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.DisplayChannel, &sendMessage)
-			if err != nil {
-				log.Println("Could not send stream message: ", err)
-				message := messageError(err)
-				s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+		if _, exists := guildRuntime[guildID].activeStreams[streamerID]; !slices.Contains(guildRuntime[guildID].Config().StreamerIDBlacklist, streamerID) &&  !exists {
+			if !guildRuntime[guildID].Config().EnableMinViewers || (guildRuntime[guildID].Config().EnableMinViewers && (stream.ViewerCount >= int(guildRuntime[guildID].Config().MinViewers))) {
+				sendMessage := messageDisplayStream(stream)
+				message, err := s.ChannelMessageSendComplex(guildRuntime[guildID].Config().DisplayChannel, &sendMessage)
+				if err != nil {
+					log.Println("Could not send stream message: ", err)
+					errMessage := messageError(err)
+					s.ChannelMessageSendComplex(guildRuntime[guildID].Config().LogChannel, &errMessage)
+					continue
+				}
+				config := guildRuntime[guildID]
+				config.activeStreams[streamerID] = message.ID
+				guildRuntime[guildID] = config
 			}
-			config := guildRuntime[guildID]
-			config.activeStreams[streamerID] = message.ID
-			guildRuntime[guildID] = config
 		}
 	}
+	return nil
 }
 
 func pollTwitch(ctx context.Context, s *discordgo.Session, guildID string) {
 	guildRuntime[guildID].activeStreams = map[string]string{}
+	fetchStreams(s, guildID)
+
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case<-ctx.Done():
+		case <-ctx.Done():
 			log.Println("Polling stopped:", ctx.Err())
 			for _, messageID := range guildRuntime[guildID].activeStreams {
-				err := s.ChannelMessageDelete(guildRuntime[guildID].guildConfig.DisplayChannel, messageID)
-				if err != nil {
-					log.Println("Couldn't delete messages:", err)
-					message := messageError(err)
-					s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+				if !guildRuntime[guildID].Config().EnableHistory {
+					err := s.ChannelMessageDelete(guildRuntime[guildID].Config().DisplayChannel, messageID)
+					if err != nil {
+						log.Println("Couldn't delete messages:", err)
+						message := messageError(err)
+						s.ChannelMessageSendComplex(guildRuntime[guildID].Config().LogChannel, &message)
+					}
 				}
 			}
 			return
 		case <-ticker.C:
-			fetchStreams(s, guildID)
+			err := fetchStreams(s, guildID)
+			if err != nil {
+				message := messageError(err)
+				s.ChannelMessageSendComplex(guildRuntime[guildID].Config().LogChannel, &message)
+			}
 			log.Println("Polling...")
 		}
 	}
@@ -150,29 +166,27 @@ func maintainAppAccessToken(ctx context.Context) {
 			log.Println("Couldn't get/refresh the Twitch App Access Token: ", err)
 			return
 		}
-
 		refreshIn := expiresIn - time.Hour
 
 		select {
-		case<-ctx.Done():
+		case <-ctx.Done():
 			return
-		case<-time.After(refreshIn):
+		case <-time.After(refreshIn):
 		}
 	}
 }
-
 
 func loadCommands(s *discordgo.Session, appID string, guildID string) {
 	_, err := s.ApplicationCommandBulkOverwrite(appID, "", []*discordgo.ApplicationCommand{})
 	if err != nil {
 		log.Println("Could not delete the global commands: ", err)
 		message := messageError(err)
-		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+		s.ChannelMessageSendComplex(guildRuntime[guildID].Config().LogChannel, &message)
 	}
 	_, err = s.ApplicationCommandBulkOverwrite(appID, guildID, []*discordgo.ApplicationCommand{})
 	if err != nil {
 		message := messageError(err)
-		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+		s.ChannelMessageSendComplex(guildRuntime[guildID].Config().LogChannel, &message)
 		log.Println("Could not delete the guild commands: ", err)
 	}
 
@@ -183,7 +197,7 @@ func loadCommands(s *discordgo.Session, appID string, guildID string) {
 	_, err = s.ApplicationCommandBulkOverwrite(appID, guildID, applicationCommandList)
 	if err != nil {
 		message := messageError(err)
-		s.ChannelMessageSendComplex(guildRuntime[guildID].guildConfig.LogChannel, &message)
+		s.ChannelMessageSendComplex(guildRuntime[guildID].Config().LogChannel, &message)
 		log.Println("Couldn't register commands: ", err)
 	}
 }
@@ -191,7 +205,7 @@ func loadCommands(s *discordgo.Session, appID string, guildID string) {
 func saveConfig() {
 	var permData = map[string]GuildConfig{}
 	for key, value := range guildRuntime {
-		permData[key] = value.guildConfig
+		permData[key] = value.Config()
 	}
 	config, err := json.Marshal(permData)
 	if err != nil {
@@ -204,7 +218,7 @@ func loadConfig() {
 	var data map[string]GuildConfig
 	config, err := os.ReadFile(configFilePath)
 	if err != nil {
-		log.Println(configFilePath + " Hasn't been created yet : ", err)
+		log.Println(configFilePath+" Hasn't been created yet:", err)
 		guildRuntime = map[string]*GuildRuntime{}
 		return
 	} else if len(config) == 0 {
