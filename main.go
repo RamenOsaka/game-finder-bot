@@ -121,7 +121,7 @@ func pollTwitch(ctx context.Context, s *discordgo.Session, guildID string) {
 	guildRuntime[guildID].activeStreams = map[string]string{}
 	fetchStreams(s, guildID)
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	for {
