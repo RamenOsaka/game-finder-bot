@@ -11,4 +11,4 @@ var defaultPerms int64 = discordgo.PermissionAdministrator
 var guildRuntime = map[string]*GuildRuntime{}
 
 // test server for devs
-var testGuildID string = "1260943648695255140"
+var testGuildID string = ""
