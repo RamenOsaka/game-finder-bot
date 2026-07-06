@@ -68,6 +68,7 @@ func main() {
 
 func fetchStreams(s *discordgo.Session, guildID string) error {
 	resp, err := twitchClient.GetStreams(&helix.StreamsParams{
+		First: 100,
 		GameIDs: []string{guildRuntime[guildID].Config().TwitchGameID},
 	})
 	if err != nil {
