@@ -6,7 +6,7 @@
 GameFinderBot has to be self hosted, but can run on virtually any server and Operating System. There is no released executable of the bot yet, so you will need to install [golang](https://go.dev/doc/install) to be able to build the executable yourself.
 
 #### Specs requirements
-GameFinderBot is lightweight and fast, if you only intend to use it on your own servers, any specs will do. Keep in mind however that it can at most support 30 servers simultaneously because of Helix API rate limits.
+GameFinderBot is lightweight and fast, if you only intend to use it on your own servers, any specs will do. Keep in mind however that it can at most support 30 servers simultaneously because of Helix API rate limits. Also note that the discord API does not allow massive message spamming over short periods of time, so if the game you want to display has hundreds of streamers, this bot will either take a while to show all of the streams or most likely get rate limited.
 
 ## Setup: Discord/Twitch Developer Portal 
 
@@ -138,6 +138,8 @@ sudo systemctl status game-finder-bot
 * Filtering by minimum viewership.
 * Adding streamers to a blacklist to stop them from showing up.
 * Automatically deleting messages of streams which are no longer playing the game/are offline (can be disabled).
+
+Reminder: Because of discord API limits, the bot can send at most one message per second in a channel. This means that if the game you want to display has hundreds of streamers, the bot will only pick the first 100, and even there it will not be able to display all of them instantly.
 
 ## Commands
 * `/setlogchannel` sets the log channel, which is used to send messages if the bot encounters problems.
